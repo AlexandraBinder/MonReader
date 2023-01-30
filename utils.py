@@ -44,21 +44,21 @@ class Net(nn.Module):
     def __init__(self, device):
         super().__init__()
         # 1 input channel, 6 output channels, 5x5 square convolution kernel
-        self.conv1 = nn.Conv2d(1, 6, 5)
+        self.conv1 = nn.Conv2d(3, 6, 5)
         # Max pooling over a (2, 2) window
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 3)
         # 5x5 from image dimension
-        self.fc1 = nn.Linear(110112, 120)   #16*5*5
+        self.fc1 = nn.Linear(61504, 120)   #16*5*5
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 2)  # 2 classes
+        self.fc4 = nn.Sigmoid()
         # self.device = device
 
     def forward(self, x):
         # input -> conv2d -> relu -> maxpool2d -> 
         # conv2d -> relu -> maxpool2d -> 
         # view -> linear -> relu -> linear -> relu -> linear
-        # x = x.to(self.device)
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         # need to flatten the output from the conv layer for the FC layers
@@ -67,6 +67,7 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+        x = self.fc4(x)
         return x
 
 def train(bs, epochs, train_loader, opt, model, criterion, device):
@@ -78,7 +79,7 @@ def train(bs, epochs, train_loader, opt, model, criterion, device):
     scaler = GradScaler()
 
     # Training will be done for affective batch size of:
-    # batch_size * gradient_accumulations = 64
+    # batch_size * gradient_accumulations
     gradient_accumulations = 16
 
     model.to(device)
@@ -109,7 +110,7 @@ def train(bs, epochs, train_loader, opt, model, criterion, device):
             # images, labels = images.detach(), labels.detach()
             # torch.cuda.empty_cache()
 
-        print(f'[EPOCH:{epoch + 1}, BATCH:{batch_idx + 1:5d}] loss: {loss / 2000:.3f}')
+        print(f'[EPOCH:{epoch + 1}, BATCH:{batch_idx + 1:5d}] loss: {loss:.3f}')
         # if i % 2000 == 1999: running_loss = 0.0
         # torch.cuda.empty_cache()
     # end.record()
@@ -155,7 +156,7 @@ def get_classification_report(model, dataloader, device):
         y_test_pred = model(X_batch)
         _, y_pred_tags = torch.max(y_test_pred, dim = 1)
 
-        print(classification_report(y_pred=np.array(y_pred_tags.cpu().numpy()), y_true=y_batch.cpu()))
+        print(classification_report(y_pred=np.array(y_pred_tags.cpu()), y_true=y_batch.cpu()))
 
 
 def save_model(model, epoch, loss, path, optimizer, show_model_state_dict=False, show_optimizer_state_dict=False):
