@@ -2,5 +2,5 @@
 *.png
 *.csv
 *.zip
-*.pt
+*.pth
 *__pycache__/
