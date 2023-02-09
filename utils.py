@@ -12,20 +12,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 import copy
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, f1_score, confusion_matrix, ConfusionMatrixDisplay
 from torch.cuda.amp import GradScaler, autocast
 
-def get_data_csv(path):
-
-    dfs = []
-    for i, category in enumerate(os.listdir(path)):
-        df = pd.DataFrame()
-        df['filename'] = pd.Series(os.listdir(os.path.join(path, category)))
-        # df['path'] = pd.Series(df['filename'].apply(lambda x: os.path.join(path, category, str(x))))
-        df['category'] = category
-        dfs.append(df)
-
-    return pd.concat(dfs, ignore_index=True)
 
 def imshow(img, class_names, label):
     un_norm_img = img / 2 + 0.5 # unnormalize
@@ -35,40 +24,6 @@ def imshow(img, class_names, label):
     # plt.title(f"Label: {label} - {class_names[label]}")
     plt.show()
 
-    # img = train_features[0].squeeze()
-    # label = train_labels[0]
-
-
-class Net(nn.Module):
-
-    def __init__(self, device):
-        super().__init__()
-        # 1 input channel, 6 output channels, 5x5 square convolution kernel
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        # Max pooling over a (2, 2) window
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 3)
-        # 5x5 from image dimension
-        self.fc1 = nn.Linear(61504, 120)   #16*5*5
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 2)  # 2 classes
-        self.fc4 = nn.Sigmoid()
-        # self.device = device
-
-    def forward(self, x):
-        # input -> conv2d -> relu -> maxpool2d -> 
-        # conv2d -> relu -> maxpool2d -> 
-        # view -> linear -> relu -> linear -> relu -> linear
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        # need to flatten the output from the conv layer for the FC layers
-        # can use x.view(-1, 16*5*5) or torch.flatten(x, 1)
-        x = torch.flatten(x, 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        x = self.fc4(x)
-        return x
 
 def train(bs, epochs, train_loader, opt, model, criterion, device):
     # start = torch.cuda.Event(enable_timing=True)
@@ -110,40 +65,12 @@ def train(bs, epochs, train_loader, opt, model, criterion, device):
             # images, labels = images.detach(), labels.detach()
             # torch.cuda.empty_cache()
 
-        print(f'[EPOCH:{epoch + 1}, BATCH:{batch_idx + 1:5d}] loss: {loss:.3f}')
+        print(f'[EPOCH:{epoch + 1}, BATCH:{batch_idx + 1:5d}] loss: {loss/gradient_accumulations:.3f}')
         # if i % 2000 == 1999: running_loss = 0.0
         # torch.cuda.empty_cache()
     # end.record()
     print('Finished Training')
     return epoch, loss #, (start, end)
-
-
-def visualize_model(model, dataloader, class_names, device, num_images=6):
-    was_training = model.training
-    model.eval()
-    images_so_far = 0
-    fig = plt.figure()
-
-    with torch.no_grad():
-        inputs, labels = next(iter(dataloader))
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-
-        outputs = model(inputs)
-        _, preds = torch.max(outputs, 1)
-        print(inputs)
-        print(preds)
-        for j in range(inputs.size()[0]):
-            images_so_far += 1
-            ax = plt.subplot(num_images//2, 2, images_so_far)
-            ax.axis('off')
-            ax.set_title(f'predicted: {class_names[preds[j]]}')
-            plt.imshow(inputs.cpu().data[j])
-
-            if images_so_far == num_images:
-                model.train(mode=was_training)
-                return
-        model.train(mode=was_training)
 
 
 def get_classification_report(model, dataloader, device):
@@ -155,12 +82,14 @@ def get_classification_report(model, dataloader, device):
         y_batch = y_batch.to(device)
         y_test_pred = model(X_batch)
         _, y_pred_tags = torch.max(y_test_pred, dim = 1)
-
         print(classification_report(y_pred=np.array(y_pred_tags.cpu()), y_true=y_batch.cpu()))
+        print('F1 score: ', np.round((f1_score(y_pred=np.array(y_pred_tags.cpu()), y_true=y_batch.cpu()))*100, 2))
+        print('Confusion matrix:')
+        ConfusionMatrixDisplay(confusion_matrix(y_pred=np.array(y_pred_tags.cpu()), y_true=y_batch.cpu())).plot()
 
 
 def save_model(model, epoch, loss, path, optimizer, show_model_state_dict=False, show_optimizer_state_dict=False):
-
+    torch.manual_seed(42)
     if show_model_state_dict:
         print("Model's state_dict:")
         for param_tensor in model.state_dict():
